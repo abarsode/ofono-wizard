@@ -1,6 +1,8 @@
 bin_PROGRAMS = ofono-wizard
 
 ofono_wizard_SOURCES =       \
+			ofono-wizard.h \
+			ofono-wizard.c \
 			main.c
 
 ofono_wizard_CPPFLAGS = \

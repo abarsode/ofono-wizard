@@ -25,10 +25,16 @@
 
 #include <gtk/gtk.h>
 
+#include "ofono-wizard.h"
+
 gint
 main (gint argc, gchar **argv)
 {
+	OfonoWizard *wizard;
+
 	gtk_init (&argc, &argv);
+
+	wizard = ofono_wizard_new ();
 
 	gtk_main ();
 
