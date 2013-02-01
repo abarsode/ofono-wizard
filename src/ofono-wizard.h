@@ -48,6 +48,8 @@ GType ofono_wizard_get_type (void) G_GNUC_CONST;
 
 OfonoWizard  *ofono_wizard_new (void);
 
+void ofono_wizard_setup_assistant(OfonoWizard *ofono_wizard);
+
 G_END_DECLS
 
 #endif /* !OFONO_WIZARD_H */
