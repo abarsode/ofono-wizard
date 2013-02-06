@@ -34,11 +34,15 @@ main (gint argc, gchar **argv)
 
 	gtk_init (&argc, &argv);
 
+	mobile_provider_init ();
+
 	wizard = ofono_wizard_new ();
 
 	ofono_wizard_setup_assistant (wizard);
 
 	gtk_main ();
+
+	mobile_provider_exit ();
 
 	return 0;
 }
