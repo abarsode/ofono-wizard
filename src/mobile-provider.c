@@ -502,7 +502,7 @@ mobile_provider_exit ()
 	g_hash_table_destroy (country_info);
 }
 
-/************ ELPER FUNCTIONS FOR MOBILE PROVIDER *********/
+/************ HELPER FUNCTIONS FOR MOBILE PROVIDER *********/
 
 GList *mobile_provider_get_country_list ()
 {
@@ -586,6 +586,22 @@ PlanInfo *mobile_provider_get_plan_info (const gchar *country_name,
 		return NULL;
 
 	return plan_info;
+}
+
+gchar *mobile_provider_get_country_from_code (gchar *code)
+{
+	GHashTableIter iter;
+	gpointer key, value;
+
+	g_hash_table_iter_init (&iter, country_codes);
+
+	while (g_hash_table_iter_next (&iter, &key, &value))
+	{
+		if (!strcmp ((gchar *)value, code))
+			return (gchar *) key;
+	}
+
+	return NULL;
 }
 
 /************** TEST THE SERVICEXML TABLES & COUNTRY CODES ****************/
