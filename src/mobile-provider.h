@@ -27,7 +27,12 @@
 #ifndef MOBILE_PROVIDER_H
 #define MOBILE_PROVIDER_H
 
-typedef struct _PlanInfo PlanInfo;
+typedef struct _PlanInfo
+{
+  char *apn;
+  char *username;
+  char *password;
+} PlanInfo;
 
 GList *mobile_provider_get_country_list ();
 GList *mobile_provider_get_provider_list (const gchar *country_name);

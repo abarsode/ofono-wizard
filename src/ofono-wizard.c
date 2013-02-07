@@ -38,6 +38,9 @@ struct _OfonoWizardPrivate {
 	const gchar *country_by_locale;
 	gchar *selected_country;
 	gchar *selected_provider;
+	gchar *selected_apn;
+	gchar *selected_username;
+	gchar *selected_password;
 
 	/* Country page */
 	guint32 country_idx;
@@ -59,6 +62,16 @@ struct _OfonoWizardPrivate {
 	GtkWidget *provider_unlisted_type_combo;
 
 	gboolean provider_only_cdma;
+
+	/* Plan page */
+	guint32 plan_idx;
+	GtkWidget *plan_page;
+	GtkWidget *plan_combo;
+	GtkListStore *plan_store;
+	guint32 plan_focus_id;
+
+	GtkWidget *plan_unlisted_entry;
+
 };
 
 #define OFONO_WIZARD_GET_PRIVATE(object) \
@@ -160,6 +173,257 @@ intro_setup (OfonoWizardPrivate *priv)
 static void
 assistant_closed (GtkButton *button, gpointer user_data)
 {
+}
+
+/**********************************************************/
+/* Plan page */
+/**********************************************************/
+
+#define PLAN_COL_NAME 0
+#define PLAN_COL_MANUAL 1
+
+static PlanInfo *
+get_selected_plan_info (OfonoWizardPrivate *priv)
+{
+	GtkTreeModel *model;
+	GtkTreeIter iter;
+	gchar *plan;
+	PlanInfo *info;
+
+	if (!gtk_combo_box_get_active_iter (GTK_COMBO_BOX (priv->plan_combo), &iter))
+		return NULL;
+
+	model = gtk_combo_box_get_model (GTK_COMBO_BOX (priv->plan_combo));
+	if (!model)
+		return NULL;
+
+	gtk_tree_model_get (model, &iter,
+	                    PLAN_COL_NAME, &plan,
+	                    -1);
+
+	info = mobile_provider_get_plan_info (priv->selected_country, priv->selected_provider, plan);
+
+	return info;
+}
+
+static void
+plan_update_complete (OfonoWizardPrivate *priv)
+{
+	GtkAssistant *assistant = GTK_ASSISTANT (priv->assistant);
+	PlanInfo *info;
+
+	info = get_selected_plan_info (priv);
+	if (info) {
+		priv->selected_apn = info->apn;
+
+		if (info->username)
+			priv->selected_username = info->username;
+
+		if (info->password)
+			priv->selected_password = info->password;
+
+		gtk_assistant_set_page_complete (assistant, priv->plan_page, TRUE);
+	} else {
+		priv->selected_apn = (gchar *)gtk_entry_get_text (GTK_ENTRY (priv->plan_unlisted_entry));
+		priv->selected_username = NULL;
+		priv->selected_password = NULL;
+
+		gtk_assistant_set_page_complete (assistant, priv->plan_page,
+		                                 (priv->selected_apn && strlen (priv->selected_apn)));
+	}
+
+	g_printerr ("\nselected APN is %s\n", priv->selected_apn);
+	g_printerr ("selected  Username is %s\n", priv->selected_username);
+	g_printerr ("selected Password is %s\n", priv->selected_password);
+}
+
+static void
+plan_combo_changed (OfonoWizardPrivate *priv)
+{
+	PlanInfo *info;
+
+	info = get_selected_plan_info (priv);
+	if (info) {
+		gtk_entry_set_text (GTK_ENTRY (priv->plan_unlisted_entry), info->apn);
+		gtk_widget_set_sensitive (priv->plan_unlisted_entry, FALSE);
+	} else {
+		gtk_entry_set_text (GTK_ENTRY (priv->plan_unlisted_entry), "");
+		gtk_widget_set_sensitive (priv->plan_unlisted_entry, TRUE);
+		gtk_widget_grab_focus (priv->plan_unlisted_entry);
+	}
+
+	plan_update_complete (priv);
+}
+
+static gboolean
+plan_row_separator_func (GtkTreeModel *model, GtkTreeIter *iter, gpointer data)
+{
+	gboolean is_manual = FALSE;
+
+	gtk_tree_model_get (model, iter,
+	                    PLAN_COL_MANUAL, &is_manual,
+	                    -1);
+	if (!is_manual)
+		return TRUE;
+
+	return FALSE;
+}
+
+static void
+apn_filter_cb (GtkEntry *   entry,
+               const gchar *text,
+               gint         length,
+               gint *       position,
+               gpointer     user_data)
+{
+	GtkEditable *editable = GTK_EDITABLE (entry);
+	int i, count = 0;
+	gchar *result = g_new0 (gchar, length);
+
+	for (i = 0; i < length; i++) {
+		if (   isalnum (text[i])
+		    || (text[i] == '.')
+		    || (text[i] == '_')
+		    || (text[i] == '-'))
+			result[count++] = text[i];
+	}
+
+	if (count > 0) {
+		g_signal_handlers_block_by_func (G_OBJECT (editable),
+		                                 G_CALLBACK (apn_filter_cb),
+		                                 user_data);
+		gtk_editable_insert_text (editable, result, count, position);
+		g_signal_handlers_unblock_by_func (G_OBJECT (editable),
+		                                   G_CALLBACK (apn_filter_cb),
+		                                   user_data);
+	}
+
+	g_signal_stop_emission_by_name (G_OBJECT (editable), "insert-text");
+	g_free (result);
+}
+
+static void
+plan_setup (OfonoWizardPrivate *priv)
+{
+	GtkWidget *vbox, *label, *alignment, *hbox, *image;
+	GtkCellRenderer *renderer;
+
+        vbox = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
+
+	gtk_container_set_border_width (GTK_CONTAINER (vbox), 12);
+
+	label = gtk_label_new_with_mnemonic (_("_Select your plan:"));
+	gtk_misc_set_alignment (GTK_MISC (label), 0, 0.5);
+	gtk_box_pack_start (GTK_BOX (vbox), label, FALSE, FALSE, 0);
+
+	priv->plan_store = gtk_list_store_new (2, G_TYPE_STRING, G_TYPE_BOOLEAN);
+
+	priv->plan_combo = gtk_combo_box_new_with_model (GTK_TREE_MODEL (priv->plan_store));
+	gtk_label_set_mnemonic_widget (GTK_LABEL (label), priv->plan_combo);
+	gtk_combo_box_set_row_separator_func (GTK_COMBO_BOX (priv->plan_combo),
+	                                      plan_row_separator_func,
+	                                      NULL,
+	                                      NULL);
+
+	renderer = gtk_cell_renderer_text_new ();
+	gtk_cell_layout_pack_start (GTK_CELL_LAYOUT (priv->plan_combo), renderer, TRUE);
+	gtk_cell_layout_add_attribute (GTK_CELL_LAYOUT (priv->plan_combo), renderer, "text", PLAN_COL_NAME);
+
+	g_signal_connect_swapped (priv->plan_combo, "changed", G_CALLBACK (plan_combo_changed), priv);
+
+	alignment = gtk_alignment_new (0, 0.5, 0.5, 0);
+	gtk_alignment_set_padding (GTK_ALIGNMENT (alignment), 0, 12, 0, 0);
+	gtk_container_add (GTK_CONTAINER (alignment), priv->plan_combo);
+	gtk_box_pack_start (GTK_BOX (vbox), alignment, FALSE, FALSE, 0);
+
+	label = gtk_label_new_with_mnemonic (_("Selected plan _APN (Access Point Name):"));
+	gtk_misc_set_alignment (GTK_MISC (label), 0, 0.5);
+	gtk_box_pack_start (GTK_BOX (vbox), label, FALSE, FALSE, 0);
+
+	priv->plan_unlisted_entry = gtk_entry_new ();
+	gtk_label_set_mnemonic_widget (GTK_LABEL (label), priv->plan_unlisted_entry);
+	gtk_entry_set_max_length (GTK_ENTRY (priv->plan_unlisted_entry), 64);
+	g_signal_connect (priv->plan_unlisted_entry, "insert-text", G_CALLBACK (apn_filter_cb), priv);
+	g_signal_connect_swapped (priv->plan_unlisted_entry, "changed", G_CALLBACK (plan_update_complete), priv);
+
+	alignment = gtk_alignment_new (0, 0.5, 0.5, 0);
+	gtk_alignment_set_padding (GTK_ALIGNMENT (alignment), 0, 24, 0, 0);
+	gtk_container_add (GTK_CONTAINER (alignment), priv->plan_unlisted_entry);
+	gtk_box_pack_start (GTK_BOX (vbox), alignment, FALSE, FALSE, 0);
+
+        hbox = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+
+	image = gtk_image_new_from_stock (GTK_STOCK_DIALOG_WARNING, GTK_ICON_SIZE_DIALOG);
+	gtk_misc_set_alignment (GTK_MISC (image), 0.5, 0.0);
+	gtk_box_pack_start (GTK_BOX (hbox), image, FALSE, FALSE, 0);
+
+	label = gtk_label_new (_("Warning: Selecting an incorrect plan may result in billing issues for your broadband account or may prevent connectivity.\n\nIf you are unsure of your plan please ask your provider for your plan's APN."));
+	gtk_widget_set_size_request (label, 500, -1);
+	gtk_label_set_line_wrap (GTK_LABEL (label), TRUE);
+	gtk_box_pack_start (GTK_BOX (hbox), label, FALSE, TRUE, 0);
+	gtk_box_pack_start (GTK_BOX (vbox), hbox, FALSE, FALSE, 0);
+
+	priv->plan_idx = gtk_assistant_append_page (GTK_ASSISTANT (priv->assistant), vbox);
+	gtk_assistant_set_page_title (GTK_ASSISTANT (priv->assistant), vbox, _("Choose your Billing Plan"));
+	gtk_assistant_set_page_type (GTK_ASSISTANT (priv->assistant), vbox, GTK_ASSISTANT_PAGE_CONTENT);
+	gtk_widget_show_all (vbox);
+
+	priv->plan_page = vbox;
+}
+
+static void
+add_plan (gpointer data, gpointer user_data)
+{
+	OfonoWizardPrivate *priv = user_data;
+	gchar *plan = data;
+	GtkTreeIter plan_iter;
+
+	g_assert (data);
+
+	gtk_list_store_append (GTK_LIST_STORE (priv->plan_store), &plan_iter);
+
+	gtk_list_store_set (GTK_LIST_STORE (priv->plan_store),
+	                    &plan_iter,
+	                    PLAN_COL_NAME,
+	                    plan,
+	                    PLAN_COL_MANUAL,
+	                    TRUE,
+	                    -1);
+}
+
+static void
+plan_prepare (OfonoWizardPrivate *priv)
+{
+	GtkTreeIter method_iter;
+	GList *plans;
+
+	if (priv->plan_store)
+		gtk_list_store_clear (priv->plan_store);
+
+	plans = mobile_provider_get_plan_list (priv->selected_country, priv->selected_provider);
+	if (plans)
+		g_list_foreach (plans, add_plan, priv);
+
+	/* Draw the separator */
+	if (plans)
+		gtk_list_store_append (GTK_LIST_STORE (priv->plan_store), &method_iter);
+
+
+	/* Add the "My plan is not listed..." item */
+	gtk_list_store_append (GTK_LIST_STORE (priv->plan_store), &method_iter);
+	gtk_list_store_set (GTK_LIST_STORE (priv->plan_store),
+	                    &method_iter,
+	                    PLAN_COL_NAME,
+	                    _("My plan is not listed..."),
+	                    PLAN_COL_MANUAL,
+			    TRUE,
+	                    -1);
+
+	/* Select the first item by default if nothing is yet selected */
+	if (gtk_combo_box_get_active (GTK_COMBO_BOX (priv->plan_combo)) < 0)
+		gtk_combo_box_set_active (GTK_COMBO_BOX (priv->plan_combo), 0);
+
+	plan_combo_changed (priv);
 }
 
 /**********************************************************/
@@ -706,6 +970,8 @@ assistant_prepare (GtkAssistant *assistant, GtkWidget *page, gpointer user_data)
 		country_prepare (priv);
 	else if (page == priv->providers_page)
 		providers_prepare (priv);
+	else if (page == priv->plan_page)
+		plan_prepare (priv);
 	else
 		return;
 }
@@ -729,6 +995,7 @@ ofono_wizard_setup_assistant(OfonoWizard *ofono_wizard)
 	intro_setup (priv);
 	country_setup (priv);
 	providers_setup (priv);
+	plan_setup (priv);
 
 	g_signal_connect (priv->assistant, "close", G_CALLBACK (assistant_closed), priv);
 	g_signal_connect (priv->assistant, "cancel", G_CALLBACK (assistant_cancel), priv);

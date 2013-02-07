@@ -68,13 +68,6 @@ static char *servicexml_current_plan_name = NULL;
 static char *servicexml_current_username = NULL;
 static char *servicexml_current_password = NULL;
 
-struct _PlanInfo
-{
-  char *apn;
-  char *username;
-  char *password;
-};
-
 /* Country Code (key) <--> Hash of Providers (value)	: country_info
  * Provider Name(key) <--> Hash of Plans (value)	: provider_info
  * Plan Name	(key) <--> Hash of Plan Info (value)	: plan_info
