@@ -535,6 +535,8 @@ GList *mobile_provider_get_provider_list (const gchar *country_name)
 	if (provider_list == NULL)
 		return NULL;
 
+	provider_list = g_list_sort (provider_list, (GCompareFunc) strcmp);
+
 	return provider_list;
 }
 
@@ -558,6 +560,8 @@ GList *mobile_provider_get_plan_list (const gchar *country_name, const gchar *pr
 	plan_list = g_hash_table_get_keys (plans);
 	if (plan_list == NULL)
 		return NULL;
+
+	plan_list = g_list_sort (plan_list, (GCompareFunc) strcmp);
 
 	return plan_list;
 }
