@@ -36,6 +36,8 @@
 #include <stdio.h>
 #include <glib.h>
 
+#include "mobile-provider.h"
+
 /* Fixit: Determine the PREFIX from configure */
 #ifndef MOBILE_BROADBAND_PROVIDER_INFO
 #define MOBILE_BROADBAND_PROVIDER_INFO "/usr/share/mobile-broadband-provider-info/serviceproviders.xml"
@@ -66,12 +68,12 @@ static char *servicexml_current_plan_name = NULL;
 static char *servicexml_current_username = NULL;
 static char *servicexml_current_password = NULL;
 
-typedef struct _PlanInfo
+struct _PlanInfo
 {
   char *apn;
   char *username;
   char *password;
-}PlanInfo;
+};
 
 /* Country Code (key) <--> Hash of Providers (value)	: country_info
  * Provider Name(key) <--> Hash of Plans (value)	: provider_info

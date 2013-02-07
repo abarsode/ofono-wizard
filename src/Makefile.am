@@ -3,6 +3,7 @@ bin_PROGRAMS = ofono-wizard
 ofono_wizard_SOURCES =       \
 			ofono-wizard.h \
 			ofono-wizard.c \
+			mobile-provider.h \
 			mobile-provider.c \
 			main.c
 
