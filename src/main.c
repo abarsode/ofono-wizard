@@ -24,6 +24,7 @@
 #include <glib.h>
 
 #include <gtk/gtk.h>
+#include <glib/gi18n.h>
 
 #include "ofono-wizard.h"
 
@@ -31,8 +32,30 @@ gint
 main (gint argc, gchar **argv)
 {
 	OfonoWizard *wizard;
+	GOptionContext *context;
+	GError *error = NULL;
+	gchar *path = NULL;
+	gboolean success;
+
+	GOptionEntry entries[] = {
+		{ "path", 'p', 0, G_OPTION_ARG_STRING, &path, "Object path for the modem", "PATH" },
+		{ NULL }
+	};
 
 	gtk_init (&argc, &argv);
+
+	context = g_option_context_new ("Setup Context Details (APN) for modem's Context");
+	g_option_context_add_main_entries (context, entries, NULL);
+	success = g_option_context_parse (context, &argc, &argv, &error);
+
+	if (!success) {
+		g_warning ("%s\n", error->message);
+		g_error_free (error);
+		return 1;
+	}
+
+	if (path == NULL)
+		g_warning (_("No modem path provided. Using the first availabe modem.\n"));
 
 	mobile_provider_init ();
 
