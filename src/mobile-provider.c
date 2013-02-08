@@ -541,13 +541,16 @@ GList *mobile_provider_get_plan_list (const gchar *country_name, const gchar *pr
 	gchar *country_code = NULL;
 
 	country_code = g_hash_table_lookup (country_codes, country_name);
+	if (country_code == NULL)
+		return NULL;
 
 	providers = (GHashTable *) g_hash_table_lookup (country_info, country_code);
 	if (providers == NULL)
 		return NULL;
 
+	/* if the provider is found, then return the plans */
 	plans = (GHashTable *) g_hash_table_lookup (providers, provider_name);
-	if (providers == NULL)
+	if (plans == NULL)
 		return NULL;
 
 	plan_list = g_hash_table_get_keys (plans);
@@ -570,13 +573,15 @@ PlanInfo *mobile_provider_get_plan_info (const gchar *country_name,
 	gchar *country_code = NULL;
 
 	country_code = g_hash_table_lookup (country_codes, country_name);
+	if (country_code == NULL)
+		return NULL;
 
 	providers = (GHashTable *) g_hash_table_lookup (country_info, country_code);
 	if (providers == NULL)
 		return NULL;
 
 	plans = (GHashTable *) g_hash_table_lookup (providers, provider_name);
-	if (providers == NULL)
+	if (plans == NULL)
 		return NULL;
 
 

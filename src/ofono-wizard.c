@@ -537,7 +537,6 @@ plan_prepare (OfonoWizardPrivate *priv)
 	if (plans)
 		gtk_list_store_append (GTK_LIST_STORE (priv->plan_store), &method_iter);
 
-
 	/* Add the "My plan is not listed..." item */
 	gtk_list_store_append (GTK_LIST_STORE (priv->plan_store), &method_iter);
 	gtk_list_store_set (GTK_LIST_STORE (priv->plan_store),
