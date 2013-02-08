@@ -38,6 +38,7 @@ struct _OfonoWizardPrivate {
 	const gchar *country_by_locale;
 	gchar *selected_country;
 	gchar *selected_provider;
+	gchar *selected_plan;
 	gchar *selected_apn;
 	gchar *selected_username;
 	gchar *selected_password;
@@ -72,6 +73,15 @@ struct _OfonoWizardPrivate {
 
 	GtkWidget *plan_unlisted_entry;
 
+	/* Confirm page */
+	GtkWidget *confirm_page;
+	GtkWidget *confirm_provider;
+	GtkWidget *confirm_plan;
+	GtkWidget *confirm_apn;
+	GtkWidget *confirm_plan_label;
+	GtkWidget *confirm_device;
+	GtkWidget *confirm_device_label;
+	guint32 confirm_idx;
 };
 
 #define OFONO_WIZARD_GET_PRIVATE(object) \
@@ -112,6 +122,121 @@ get_country_from_locale (void)
 	}
 
 	return cc;
+}
+
+/**********************************************************/
+/* Confirm page */
+/**********************************************************/
+
+static void
+confirm_setup (OfonoWizardPrivate *priv)
+{
+	GtkWidget *vbox, *label, *alignment, *pbox;
+
+        vbox = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
+
+	gtk_container_set_border_width (GTK_CONTAINER (vbox), 12);
+	label = gtk_label_new (_("Your mobile broadband connection is configured with the following settings:"));
+	gtk_widget_set_size_request (label, 500, -1);
+	gtk_misc_set_alignment (GTK_MISC (label), 0, 0.5);
+	gtk_label_set_line_wrap (GTK_LABEL (label), TRUE);
+	gtk_box_pack_start (GTK_BOX (vbox), label, FALSE, FALSE, 6);
+
+	/* Device */
+	/* priv->confirm_device_label = gtk_label_new (_("Your Device:")); */
+	/* gtk_misc_set_alignment (GTK_MISC (priv->confirm_device_label), 0, 0.5); */
+	/* gtk_box_pack_start (GTK_BOX (vbox), priv->confirm_device_label, FALSE, FALSE, 0); */
+
+	/* alignment = gtk_alignment_new (0, 0.5, 0, 0); */
+	/* gtk_alignment_set_padding (GTK_ALIGNMENT (alignment), 0, 12, 25, 0); */
+	/* priv->confirm_device = gtk_label_new (NULL); */
+	/* gtk_container_add (GTK_CONTAINER (alignment), priv->confirm_device); */
+	/* gtk_box_pack_start (GTK_BOX (vbox), alignment, FALSE, FALSE, 0); */
+
+	/* Provider */
+	label = gtk_label_new (_("Your Provider:"));
+	gtk_misc_set_alignment (GTK_MISC (label), 0, 0.5);
+	gtk_box_pack_start (GTK_BOX (vbox), label, FALSE, FALSE, 0);
+
+	alignment = gtk_alignment_new (0, 0.5, 0, 0);
+	gtk_alignment_set_padding (GTK_ALIGNMENT (alignment), 0, 12, 25, 0);
+	priv->confirm_provider = gtk_label_new (NULL);
+	gtk_container_add (GTK_CONTAINER (alignment), priv->confirm_provider);
+	gtk_box_pack_start (GTK_BOX (vbox), alignment, FALSE, FALSE, 0);
+
+	/* Plan and APN */
+	priv->confirm_plan_label = gtk_label_new (_("Your Plan:"));
+	gtk_misc_set_alignment (GTK_MISC (priv->confirm_plan_label), 0, 0.5);
+	gtk_box_pack_start (GTK_BOX (vbox), priv->confirm_plan_label, FALSE, FALSE, 0);
+
+	alignment = gtk_alignment_new (0, 0.5, 0, 0);
+	gtk_alignment_set_padding (GTK_ALIGNMENT (alignment), 0, 0, 25, 0);
+
+        pbox = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
+
+	gtk_container_add (GTK_CONTAINER (alignment), pbox);
+	gtk_box_pack_start (GTK_BOX (vbox), alignment, FALSE, FALSE, 0);
+
+	priv->confirm_plan = gtk_label_new (NULL);
+	gtk_misc_set_alignment (GTK_MISC (priv->confirm_plan), 0, 0.5);
+	gtk_box_pack_start (GTK_BOX (pbox), priv->confirm_plan, FALSE, FALSE, 0);
+
+	priv->confirm_apn = gtk_label_new (NULL);
+	gtk_misc_set_alignment (GTK_MISC (priv->confirm_apn), 0, 0.5);
+	gtk_misc_set_padding (GTK_MISC (priv->confirm_apn), 0, 6);
+	gtk_box_pack_start (GTK_BOX (pbox), priv->confirm_apn, FALSE, FALSE, 0);
+
+	if (TRUE) {
+		alignment = gtk_alignment_new (0, 0.5, 1, 0);
+		label = gtk_label_new (_("A connection will now be made to your mobile broadband provider using the settings you selected.  If the connection fails or you cannot access network resources, double-check your settings.  To modify your mobile broadband connection settings, choose \"Network Connections\" from the System >> Preferences menu."));
+		gtk_widget_set_size_request (label, 500, -1);
+		gtk_misc_set_alignment (GTK_MISC (label), 0, 0.5);
+		gtk_misc_set_padding (GTK_MISC (label), 0, 6);
+		gtk_label_set_line_wrap (GTK_LABEL (label), TRUE);
+		gtk_container_add (GTK_CONTAINER (alignment), label);
+		gtk_box_pack_start (GTK_BOX (vbox), alignment, FALSE, FALSE, 6);
+	}
+
+	gtk_widget_show_all (vbox);
+	priv->confirm_idx = gtk_assistant_append_page (GTK_ASSISTANT (priv->assistant), vbox);
+	gtk_assistant_set_page_title (GTK_ASSISTANT (priv->assistant),
+	                              vbox, _("Confirm Mobile Broadband Settings"));
+
+	gtk_assistant_set_page_complete (GTK_ASSISTANT (priv->assistant), vbox, TRUE);
+	gtk_assistant_set_page_type (GTK_ASSISTANT (priv->assistant), vbox, GTK_ASSISTANT_PAGE_CONFIRM);
+
+	priv->confirm_page = vbox;
+}
+
+static void
+confirm_prepare (OfonoWizardPrivate *priv)
+{
+	gboolean manual = FALSE;
+	GString *str;
+
+	/* Provider */
+	str = g_string_new (NULL);
+	g_string_append (str, priv->selected_provider);
+	g_string_append_printf (str, ", %s", priv->selected_country);
+
+	gtk_label_set_text (GTK_LABEL (priv->confirm_provider), str->str);
+	g_string_free (str, TRUE);
+
+	/* Plan */
+	gtk_widget_show (priv->confirm_plan_label);
+	gtk_widget_show (priv->confirm_plan);
+	gtk_widget_show (priv->confirm_apn);
+
+	if (strcmp (priv->selected_plan, _("My plan is not listed...")))
+		gtk_label_set_text (GTK_LABEL (priv->confirm_plan), priv->selected_plan);
+	else
+		gtk_label_set_text (GTK_LABEL (priv->confirm_plan), _("Unlisted"));
+
+
+	str = g_string_new (NULL);
+	g_string_append_printf (str, "<span color=\"#999999\">APN: %s</span>", priv->selected_apn);
+	gtk_label_set_markup (GTK_LABEL (priv->confirm_apn), str->str);
+	g_string_free (str, TRUE);
 }
 
 static void
@@ -173,6 +298,9 @@ intro_setup (OfonoWizardPrivate *priv)
 static void
 assistant_closed (GtkButton *button, gpointer user_data)
 {
+	OfonoWizardPrivate *priv = user_data;
+
+	gtk_widget_hide (priv->assistant);
 }
 
 /**********************************************************/
@@ -201,6 +329,7 @@ get_selected_plan_info (OfonoWizardPrivate *priv)
 	                    PLAN_COL_NAME, &plan,
 	                    -1);
 
+	priv->selected_plan = plan;
 	info = mobile_provider_get_plan_info (priv->selected_country, priv->selected_provider, plan);
 
 	return info;
@@ -816,10 +945,8 @@ country_update_complete (OfonoWizardPrivate *priv)
 	gboolean complete = FALSE;
 
 	priv->selected_country = get_selected_country (priv);
-	if (priv->selected_country) {
+	if (priv->selected_country)
 		complete = TRUE;
-		g_printerr ("\nSelected country is %s\n", priv->selected_country);
-	}
 
 	gtk_assistant_set_page_complete (GTK_ASSISTANT (priv->assistant),
 	                                 priv->country_page,
@@ -972,8 +1099,8 @@ assistant_prepare (GtkAssistant *assistant, GtkWidget *page, gpointer user_data)
 		providers_prepare (priv);
 	else if (page == priv->plan_page)
 		plan_prepare (priv);
-	else
-		return;
+	else if (page == priv->confirm_page)
+		confirm_prepare (priv);
 }
 
 void
@@ -996,6 +1123,7 @@ ofono_wizard_setup_assistant(OfonoWizard *ofono_wizard)
 	country_setup (priv);
 	providers_setup (priv);
 	plan_setup (priv);
+	confirm_setup (priv);
 
 	g_signal_connect (priv->assistant, "close", G_CALLBACK (assistant_closed), priv);
 	g_signal_connect (priv->assistant, "cancel", G_CALLBACK (assistant_cancel), priv);
