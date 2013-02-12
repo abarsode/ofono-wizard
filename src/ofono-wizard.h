@@ -49,6 +49,7 @@ GType ofono_wizard_get_type (void) G_GNUC_CONST;
 OfonoWizard  *ofono_wizard_new (void);
 
 void ofono_wizard_setup_assistant(OfonoWizard *ofono_wizard);
+void ofono_wizard_setup_modem (OfonoWizard *ofono_wizard, gchar *path);
 
 G_END_DECLS
 

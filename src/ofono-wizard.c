@@ -29,11 +29,17 @@
 #include <glib.h>
 #include <glib/gi18n.h>
 
+#include "ofono-manager.h"
+#include "ofono-modem.h"
+
 #include "ofono-wizard.h"
 #include "mobile-provider.h"
 
 struct _OfonoWizardPrivate {
-	gchar	*modem_path;
+	Manager *manager;
+	Modem	*modem;
+	gchar	*name;
+
 	GtkWidget *assistant;
 	const gchar *country_by_locale;
 	gchar *selected_country;
@@ -244,13 +250,16 @@ intro_setup (OfonoWizardPrivate *priv)
 {
 	GtkWidget *vbox, *label, *alignment, *info_vbox;
 	GtkCellRenderer *renderer;
-	char *s;
+	char *s, *markup;
 
 	vbox = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
 
 	gtk_container_set_border_width (GTK_CONTAINER (vbox), 12);
 
-	label = gtk_label_new (_("This assistant helps you easily set up a mobile broadband connection to a cellular (3G) network."));
+	label = gtk_label_new (NULL);
+	markup = g_markup_printf_escaped (_("This assistant helps you easily set up a mobile broadband connection to a cellular (3G) network using <b>%s</b>."), priv->name);
+	gtk_label_set_markup(GTK_LABEL(label), markup);
+	g_free (markup);
 	gtk_misc_set_alignment (GTK_MISC (label), 0, 0.5);
 	gtk_label_set_line_wrap (GTK_LABEL (label), TRUE);
 	gtk_box_pack_start (GTK_BOX (vbox), label, FALSE, TRUE, 6);
@@ -600,8 +609,6 @@ providers_update_complete (OfonoWizardPrivate *priv)
 		gtk_assistant_set_page_complete (assistant, priv->providers_page,
 		                                 (priv->selected_provider && strlen (priv->selected_provider)));
 	}
-
-	g_printerr ("\n selected provider:%s\n", priv->selected_provider);
 }
 
 static gboolean
@@ -1134,7 +1141,24 @@ ofono_wizard_setup_assistant(OfonoWizard *ofono_wizard)
 static void
 ofono_wizard_init (OfonoWizard *ofono_wizard)
 {
+	GError *error = NULL;
+	OfonoWizardPrivate *priv;
+
 	ofono_wizard->priv = OFONO_WIZARD_GET_PRIVATE (ofono_wizard);
+	priv = ofono_wizard->priv;
+
+	priv->manager = manager_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
+							G_DBUS_PROXY_FLAGS_NONE,
+							"org.ofono",
+							"/",
+							NULL,
+							&error);
+
+	if (priv->manager == NULL) {
+		g_warning ("Unable to get oFono proxy:%s", error->message);
+		g_error_free (error);
+		exit (0);
+	}
 }
 
 static void
@@ -1163,3 +1187,66 @@ ofono_wizard_new (void)
 	return g_object_new (OFONO_TYPE_WIZARD, NULL);
 }
 
+/**********************************************************/
+/* oFono functions */
+/**********************************************************/
+
+void
+ofono_wizard_setup_modem (OfonoWizard *ofono_wizard, gchar *path)
+{
+	GError *error = NULL;
+	GVariant *result = NULL;
+	GVariant *value = NULL;
+	gboolean ret;
+	const gchar *name, *manufacturer, *model, *type;
+
+	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (ofono_wizard);
+
+	priv->modem = modem_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
+						    G_DBUS_PROXY_FLAGS_NONE,
+						    "org.ofono",
+						    path,
+						    NULL,
+						    &error);
+
+	if (priv->modem == NULL) {
+		g_warning ("Unable to get Modem Proxy: %s", error->message);
+		g_error_free (error);
+		exit (0);
+	}
+
+	ret = modem_call_get_properties_sync (priv->modem, &result, NULL, &error);
+	if (!ret) {
+		g_warning ("Unable to get Modem Properties: %s", error->message);
+		g_error_free (error);
+		exit (0);
+	}
+
+	/* Test for Type=Hardware here */
+	ret = g_variant_lookup (result, "Type", "s", &type);
+	if (!ret) {
+		g_warning ("Unable to determine modem type");
+		exit (0);
+	}
+
+	if (strcmp (type, "hardware")) {
+		g_warning ("Not a real hardware modem");
+		exit (0);
+	}
+
+	ret = g_variant_lookup (result, "Name", "s", &name);
+	if (!ret) {
+		g_variant_lookup (result, "Manufacturer", "s", &manufacturer);
+		g_variant_lookup (result, "Model", "s", &model);
+
+		if (manufacturer && model)
+			priv->name = g_strdup_printf ("%s-%s", manufacturer, model);
+		else if (manufacturer)
+			priv->name = g_strdup (manufacturer);
+		else
+			priv->name = g_strdup ("Modem");
+	} else
+		priv->name = g_strdup (name);
+
+	g_variant_unref (result);
+}

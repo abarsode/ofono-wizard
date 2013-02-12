@@ -20,6 +20,7 @@
 #include <config.h>
 #endif
 #include <stdio.h>
+#include <stdlib.h>
 
 #include <glib.h>
 
@@ -54,12 +55,15 @@ main (gint argc, gchar **argv)
 		return 1;
 	}
 
-	if (path == NULL)
-		g_warning (_("No modem path provided. Using the first availabe modem.\n"));
+	if (path == NULL) {
+		g_warning (_("Provide a modem path.\n"));
+		exit (0);
+	}
 
 	mobile_provider_init ();
 
 	wizard = ofono_wizard_new ();
+	ofono_wizard_setup_modem (wizard, path);
 
 	ofono_wizard_setup_assistant (wizard);
 
