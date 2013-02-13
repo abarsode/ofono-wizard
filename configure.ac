@@ -31,7 +31,7 @@ dnl Internationalization
 dnl ###########################################################################
 
 IT_PROG_INTLTOOL([0.35.0])
-AC_SUBST(GETTEXT_PACKAGE, tali)
+AC_SUBST(GETTEXT_PACKAGE, ofono-wizard)
 AC_DEFINE_UNQUOTED(GETTEXT_PACKAGE,"$GETTEXT_PACKAGE", [The gettext package name])
 
 dnl ###########################################################################
