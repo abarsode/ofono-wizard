@@ -32,6 +32,7 @@
 #include "ofono-manager.h"
 #include "ofono-modem.h"
 #include "ofono-connman.h"
+#include "ofono-context.h"
 
 #include "ofono-wizard.h"
 #include "mobile-provider.h"
@@ -39,9 +40,10 @@
 struct _OfonoWizardPrivate {
 	Manager *manager;
 	Modem	*modem;
-	ConnectionManager *ConnectionManager;
 	gchar	*name;
 	gchar	*context_path;
+	ConnectionManager *ConnectionManager;
+	ConnectionContext *context;
 
 	GtkWidget *assistant;
 	const gchar *country_by_locale;
@@ -102,6 +104,9 @@ static void          ofono_wizard_finalize               (GObject		*object);
 
 
 G_DEFINE_TYPE (OfonoWizard, ofono_wizard, G_TYPE_OBJECT)
+
+static void
+ofono_wizard_setup_context (OfonoWizard *ofono_wizard, gchar *apn, gchar *username, gchar *password);
 
 static char *
 get_country_from_locale (void)
@@ -310,9 +315,13 @@ intro_setup (OfonoWizardPrivate *priv)
 static void
 assistant_closed (GtkButton *button, gpointer user_data)
 {
-	OfonoWizardPrivate *priv = user_data;
+	OfonoWizard *wizard = user_data;
+	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (wizard);
 
 	gtk_widget_hide (priv->assistant);
+	gtk_widget_destroy (priv->assistant);
+	ofono_wizard_setup_context (wizard, priv->selected_apn, priv->selected_username, priv->selected_password);
+	exit (0);
 }
 
 /**********************************************************/
@@ -1134,7 +1143,7 @@ ofono_wizard_setup_assistant(OfonoWizard *ofono_wizard)
 	plan_setup (priv);
 	confirm_setup (priv);
 
-	g_signal_connect (priv->assistant, "close", G_CALLBACK (assistant_closed), priv);
+	g_signal_connect (priv->assistant, "close", G_CALLBACK (assistant_closed), ofono_wizard);
 	g_signal_connect (priv->assistant, "cancel", G_CALLBACK (assistant_cancel), priv);
 	g_signal_connect (priv->assistant, "prepare", G_CALLBACK (assistant_prepare), priv);
 
@@ -1346,7 +1355,95 @@ ofono_wizard_setup_modem (OfonoWizard *ofono_wizard, gchar *modem_path)
 	ofono_wizard_get_modem_context (ofono_wizard, modem_path);
 }
 
+static void
+ofono_wizard_setup_context (OfonoWizard *ofono_wizard, gchar *apn, gchar *username, gchar *password)
+{
+	GError *error = NULL;
+	gboolean ret;
 
+	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (ofono_wizard);
 
+	priv->context = connection_context_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
+								   G_DBUS_PROXY_FLAGS_NONE,
+								   "org.ofono",
+								   priv->context_path,
+								   NULL,
+								   &error);
 
+	if (priv->context == NULL) {
+		g_warning ("Unable to get Modem context: %s", error->message);
+		g_error_free (error);
+		exit (0);
+	}
 
+	/* First Deactivate the context. You cannot set the settings if context is active */
+	ret = connection_context_call_set_property_sync (priv->context,
+							 "Active",
+							 g_variant_new_variant (g_variant_new_boolean (FALSE)),
+							 NULL,
+							 &error);
+
+	if (!ret && error->code != 36) {
+		g_warning ("Unable to deactivate context:%s", error->message);
+		g_error_free (error);
+		exit (0);
+	}
+
+	/*Apply the settings*/
+
+	/* AccessPointName */
+	ret = connection_context_call_set_property_sync (priv->context,
+							 "AccessPointName",
+							 g_variant_new_variant (g_variant_new_string (priv->selected_apn)),
+							 NULL,
+							 &error);
+
+	if (!ret && error->code != 36) {
+		g_warning ("Unable to set the APN:%s", error->message);
+		g_error_free (error);
+		exit (0);
+	}
+
+	/* Username */
+	if (priv->selected_username) {
+		ret = connection_context_call_set_property_sync (priv->context,
+								 "Username",
+								 g_variant_new_variant (g_variant_new_string (priv->selected_username)),
+								 NULL,
+								 &error);
+
+		if (!ret && error->code != 36) {
+			g_warning ("Unable to set the Username:%s", error->message);
+			g_error_free (error);
+			exit (0);
+		}
+	}
+
+	/* Password */
+	if (priv->selected_password) {
+		ret = connection_context_call_set_property_sync (priv->context,
+								 "Password",
+								 g_variant_new_variant (g_variant_new_string (priv->selected_password)),
+								 NULL,
+								 &error);
+
+		if (!ret && error->code != 36) {
+			g_warning ("Unable to set the Username:%s", error->message);
+			g_error_free (error);
+			exit (0);
+		}
+	}
+
+	/* Activate the context for the settings to take effect */
+	ret = connection_context_call_set_property_sync (priv->context,
+							 "Active",
+							 g_variant_new_variant (g_variant_new_boolean (TRUE)),
+							 NULL,
+							 &error);
+
+	if (!ret && error->code != 36) {
+		g_warning ("Unable to activate context:%s", error->message);
+		g_error_free (error);
+		exit (0);
+	}
+}
