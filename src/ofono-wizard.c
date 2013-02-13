@@ -31,6 +31,7 @@
 
 #include "ofono-manager.h"
 #include "ofono-modem.h"
+#include "ofono-connman.h"
 
 #include "ofono-wizard.h"
 #include "mobile-provider.h"
@@ -38,7 +39,9 @@
 struct _OfonoWizardPrivate {
 	Manager *manager;
 	Modem	*modem;
+	ConnectionManager *ConnectionManager;
 	gchar	*name;
+	gchar	*context_path;
 
 	GtkWidget *assistant;
 	const gchar *country_by_locale;
@@ -1190,22 +1193,92 @@ ofono_wizard_new (void)
 /**********************************************************/
 /* oFono functions */
 /**********************************************************/
+static void
+ofono_wizard_get_modem_context (OfonoWizard *ofono_wizard, gchar *modem_path)
+{
+	GError *error = NULL;
+	GVariant *value = NULL;
+	gboolean ret, found = FALSE;
+	GVariant *result, *array_value, *tuple_value, *properties;
+	GVariantIter array_iter, tuple_iter;
+	gchar *path, *type;
+
+	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (ofono_wizard);
+	
+	priv->ConnectionManager = connection_manager_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
+									     G_DBUS_PROXY_FLAGS_NONE,
+									     "org.ofono",
+									     modem_path,
+									     NULL,
+									     &error);
+
+	if (priv->ConnectionManager == NULL) {
+		g_warning ("Unable to get Modem connection Manager: %s", error->message);
+		g_error_free (error);
+		exit (0);
+	}
+
+	ret = connection_manager_call_get_contexts_sync (priv->ConnectionManager, &result, NULL, &error);
+	if (!ret) {
+		g_warning ("Unable to get Modem Contexts: %s", error->message);
+		g_error_free (error);
+		exit (0);
+	}
+
+	/* Result is  (a(oa{sv}))*/
+	g_variant_iter_init (&array_iter, result);
+
+	while ((array_value = g_variant_iter_next_value (&array_iter)) != NULL) {
+		/* tuple_iter is oa{sv} */
+		g_variant_iter_init (&tuple_iter, array_value);
+
+		/* get the object path */
+		tuple_value = g_variant_iter_next_value (&tuple_iter);
+		g_variant_get (tuple_value, "o", &path);
+
+		/* get the Properties */
+		properties = g_variant_iter_next_value (&tuple_iter);
+		g_variant_lookup (properties, "Type", "s", &type);
+		if (!strcmp (type, "internet")) {
+			priv->context_path = g_strdup (path);
+			found = TRUE;
+			break;
+		}
+
+		g_variant_unref (array_value);
+		g_variant_unref (tuple_value);
+		g_variant_unref (properties);
+	}
+
+	g_variant_unref (array_value);
+	g_variant_unref (tuple_value);
+	g_variant_unref (properties);
+	g_variant_unref (result);
+
+	if (!found) {
+		g_warning ("Unable to get Internet context");
+		exit (0);
+		/* Create a 'internet' context here? */
+	}
+}
 
 void
-ofono_wizard_setup_modem (OfonoWizard *ofono_wizard, gchar *path)
+ofono_wizard_setup_modem (OfonoWizard *ofono_wizard, gchar *modem_path)
 {
 	GError *error = NULL;
 	GVariant *result = NULL;
 	GVariant *value = NULL;
 	gboolean ret;
 	const gchar *name, *manufacturer, *model, *type;
+	gchar *interface_list;
+	gchar **interfaces;
 
 	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (ofono_wizard);
-
+	
 	priv->modem = modem_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
 						    G_DBUS_PROXY_FLAGS_NONE,
 						    "org.ofono",
-						    path,
+						    modem_path,
 						    NULL,
 						    &error);
 
@@ -1248,5 +1321,32 @@ ofono_wizard_setup_modem (OfonoWizard *ofono_wizard, gchar *path)
 	} else
 		priv->name = g_strdup (name);
 
+	ret = g_variant_lookup (result, "Interfaces", "^as", &interfaces);
+	if (!ret) {
+		g_warning ("Unable to get modem interfaces");
+		exit (0);
+	}
+
+	if (g_strv_length (interfaces) == 0) {
+		g_warning ("No modem interfaces found");
+		exit (0);
+	}
+
+	/* Find if there is  ConnectionManager interface available */
+	interface_list = g_strjoinv (" ", interfaces);
+	gchar *s = g_strrstr (interface_list, "org.ofono.ConnectionManager");
+	if (s == NULL) {
+		g_warning ("No Contexts interface found");
+		exit (0);
+	}
+
+	g_free (interface_list);
 	g_variant_unref (result);
+
+	ofono_wizard_get_modem_context (ofono_wizard, modem_path);
 }
+
+
+
+
+

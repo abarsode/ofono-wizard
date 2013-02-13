@@ -1,7 +1,8 @@
 bin_PROGRAMS = ofono-wizard
 
-dbus_built_sources =	ofono-manager.h ofono-manager.c  \
-			ofono-modem.h ofono-modem.c
+dbus_built_sources =	ofono-manager.h ofono-manager.c \
+			ofono-modem.h ofono-modem.c	\
+			ofono-connman.h ofono-connman.c
 
 ofono-manager.c: ofono-manager.h
 ofono-manager.h: Makefile.am ofono-manager.xml
@@ -16,6 +17,13 @@ ofono-modem.h: Makefile.am ofono-modem.xml
 		--interface-prefix org.ofono.			\
 		--generate-c-code ofono-modem			\
 		$(srcdir)/ofono-modem.xml
+
+ofono-connman.c: ofono-connman.h
+ofono-connman.h: Makefile.am ofono-connman.xml
+	gdbus-codegen 						\
+		--interface-prefix org.ofono.			\
+		--generate-c-code ofono-connman			\
+		$(srcdir)/ofono-connman.xml
 
 ofono_wizard_SOURCES =       \
 			$(dbus_built_sources) \
@@ -38,6 +46,6 @@ ofono_wizard_CFLAGS = \
 ofono_wizard_LDADD = $(OFONO_WIZARD_LIBS)
 
 CLEANFILES = $(dbus_built_sources)
-EXTRA_DIST = ofono-manager.xml ofono-modem.xml
+EXTRA_DIST = ofono-manager.xml ofono-modem.xml ofono-connman.xml
 
 -include $(top_srcdir)/git.mk
