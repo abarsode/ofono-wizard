@@ -65,8 +65,6 @@ main (gint argc, gchar **argv)
 	wizard = ofono_wizard_new ();
 	ofono_wizard_setup_modem (wizard, path);
 
-	ofono_wizard_setup_assistant (wizard);
-
 	gtk_main ();
 
 	mobile_provider_exit ();

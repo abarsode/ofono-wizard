@@ -42,8 +42,10 @@ struct _OfonoWizardPrivate {
 	Modem	*modem;
 	gchar	*name;
 	gchar	*context_path;
+	gchar	*modem_path;
 	ConnectionManager *ConnectionManager;
 	ConnectionContext *context;
+	gboolean active;
 
 	GtkWidget *assistant;
 	const gchar *country_by_locale;
@@ -107,6 +109,8 @@ G_DEFINE_TYPE (OfonoWizard, ofono_wizard, G_TYPE_OBJECT)
 
 static void
 ofono_wizard_setup_context (OfonoWizard *ofono_wizard, gchar *apn, gchar *username, gchar *password);
+static void
+connection_context_set_apn (GObject *source_object, GAsyncResult *res, gpointer user_data);
 
 static char *
 get_country_from_locale (void)
@@ -319,9 +323,10 @@ assistant_closed (GtkButton *button, gpointer user_data)
 	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (wizard);
 
 	gtk_widget_hide (priv->assistant);
+
 	gtk_widget_destroy (priv->assistant);
+
 	ofono_wizard_setup_context (wizard, priv->selected_apn, priv->selected_username, priv->selected_password);
-	exit (0);
 }
 
 /**********************************************************/
@@ -382,9 +387,10 @@ plan_update_complete (OfonoWizardPrivate *priv)
 		                                 (priv->selected_apn && strlen (priv->selected_apn)));
 	}
 
-	g_printerr ("\nselected APN is %s\n", priv->selected_apn);
-	g_printerr ("selected  Username is %s\n", priv->selected_username);
-	g_printerr ("selected Password is %s\n", priv->selected_password);
+	/* For Debug only */
+	/* g_printerr ("\nselected APN is %s\n", priv->selected_apn); */
+	/* g_printerr ("selected  Username is %s\n", priv->selected_username); */
+	/* g_printerr ("selected Password is %s\n", priv->selected_password); */
 }
 
 static void
@@ -1203,7 +1209,9 @@ ofono_wizard_new (void)
 /* oFono functions */
 /**********************************************************/
 static void
-ofono_wizard_get_modem_context (OfonoWizard *ofono_wizard, gchar *modem_path)
+connection_manager_get_contexts_cb (GObject      *source_object,
+				    GAsyncResult *res,
+				    gpointer      user_data)
 {
 	GError *error = NULL;
 	GVariant *value = NULL;
@@ -1212,24 +1220,12 @@ ofono_wizard_get_modem_context (OfonoWizard *ofono_wizard, gchar *modem_path)
 	GVariantIter array_iter, tuple_iter;
 	gchar *path, *type;
 
-	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (ofono_wizard);
-	
-	priv->ConnectionManager = connection_manager_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
-									     G_DBUS_PROXY_FLAGS_NONE,
-									     "org.ofono",
-									     modem_path,
-									     NULL,
-									     &error);
+	OfonoWizard *wizard = user_data;
+	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (wizard);
 
-	if (priv->ConnectionManager == NULL) {
-		g_warning ("Unable to get Modem connection Manager: %s", error->message);
-		g_error_free (error);
-		exit (0);
-	}
-
-	ret = connection_manager_call_get_contexts_sync (priv->ConnectionManager, &result, NULL, &error);
+	ret = connection_manager_call_get_contexts_finish (priv->ConnectionManager, &result, res, &error);
 	if (!ret) {
-		g_warning ("Unable to get Modem Contexts: %s", error->message);
+		g_warning ("Unable to get Modem Proxy: %s", error->message);
 		g_error_free (error);
 		exit (0);
 	}
@@ -1249,7 +1245,13 @@ ofono_wizard_get_modem_context (OfonoWizard *ofono_wizard, gchar *modem_path)
 		properties = g_variant_iter_next_value (&tuple_iter);
 		g_variant_lookup (properties, "Type", "s", &type);
 		if (!strcmp (type, "internet")) {
+			/* Found the 1st internet context */
 			priv->context_path = g_strdup (path);
+			ret = g_variant_lookup (properties, "Active", "b", &priv->active);
+			/* Check if the context if active */
+			if (!ret)
+				priv->active = TRUE;
+
 			found = TRUE;
 			break;
 		}
@@ -1269,10 +1271,37 @@ ofono_wizard_get_modem_context (OfonoWizard *ofono_wizard, gchar *modem_path)
 		exit (0);
 		/* Create a 'internet' context here? */
 	}
+
+	ofono_wizard_setup_assistant (wizard);
 }
 
-void
-ofono_wizard_setup_modem (OfonoWizard *ofono_wizard, gchar *modem_path)
+static void
+ofono_wizard_get_modem_context (OfonoWizard *ofono_wizard)
+{
+	GError *error = NULL;
+
+	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (ofono_wizard);
+	
+	priv->ConnectionManager = connection_manager_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
+									     G_DBUS_PROXY_FLAGS_NONE,
+									     "org.ofono",
+									     priv->modem_path,
+									     NULL,
+									     &error);
+
+	if (priv->ConnectionManager == NULL) {
+		g_warning ("Unable to get Modem connection Manager: %s", error->message);
+		g_error_free (error);
+		exit (0);
+	}
+
+	connection_manager_call_get_contexts (priv->ConnectionManager, NULL, connection_manager_get_contexts_cb ,ofono_wizard);
+}
+
+static void
+modem_get_properties_cb (GObject      *source_object,
+			 GAsyncResult *res,
+			 gpointer      user_data)
 {
 	GError *error = NULL;
 	GVariant *result = NULL;
@@ -1282,24 +1311,12 @@ ofono_wizard_setup_modem (OfonoWizard *ofono_wizard, gchar *modem_path)
 	gchar *interface_list;
 	gchar **interfaces;
 
-	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (ofono_wizard);
-	
-	priv->modem = modem_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
-						    G_DBUS_PROXY_FLAGS_NONE,
-						    "org.ofono",
-						    modem_path,
-						    NULL,
-						    &error);
+	OfonoWizard *wizard = user_data;
+	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (wizard);
 
-	if (priv->modem == NULL) {
-		g_warning ("Unable to get Modem Proxy: %s", error->message);
-		g_error_free (error);
-		exit (0);
-	}
-
-	ret = modem_call_get_properties_sync (priv->modem, &result, NULL, &error);
+	ret = modem_call_get_properties_finish (priv->modem, &result, res, &error);
 	if (!ret) {
-		g_warning ("Unable to get Modem Properties: %s", error->message);
+		g_warning ("Unable to get Modem Proxy: %s", error->message);
 		g_error_free (error);
 		exit (0);
 	}
@@ -1308,11 +1325,13 @@ ofono_wizard_setup_modem (OfonoWizard *ofono_wizard, gchar *modem_path)
 	ret = g_variant_lookup (result, "Type", "s", &type);
 	if (!ret) {
 		g_warning ("Unable to determine modem type");
+		g_variant_unref (result);
 		exit (0);
 	}
 
 	if (strcmp (type, "hardware")) {
 		g_warning ("Not a real hardware modem");
+		g_variant_unref (result);
 		exit (0);
 	}
 
@@ -1333,26 +1352,190 @@ ofono_wizard_setup_modem (OfonoWizard *ofono_wizard, gchar *modem_path)
 	ret = g_variant_lookup (result, "Interfaces", "^as", &interfaces);
 	if (!ret) {
 		g_warning ("Unable to get modem interfaces");
+		g_variant_unref (result);
 		exit (0);
 	}
 
 	if (g_strv_length (interfaces) == 0) {
 		g_warning ("No modem interfaces found");
+		g_variant_unref (result);
 		exit (0);
 	}
 
-	/* Find if there is  ConnectionManager interface available */
+	/* Find if ConnectionManager interface is available */
 	interface_list = g_strjoinv (" ", interfaces);
 	gchar *s = g_strrstr (interface_list, "org.ofono.ConnectionManager");
 	if (s == NULL) {
 		g_warning ("No Contexts interface found");
+		g_free (interface_list);
+		g_strfreev (interfaces);
+		g_variant_unref (result);
 		exit (0);
 	}
 
 	g_free (interface_list);
+	g_strfreev (interfaces);
 	g_variant_unref (result);
 
-	ofono_wizard_get_modem_context (ofono_wizard, modem_path);
+	ofono_wizard_get_modem_context (wizard);
+}
+
+void
+ofono_wizard_setup_modem (OfonoWizard *ofono_wizard, gchar *modem_path)
+{
+	GError *error = NULL;
+
+	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (ofono_wizard);
+	priv->modem_path = g_strdup (modem_path);
+
+	priv->modem = modem_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
+						    G_DBUS_PROXY_FLAGS_NONE,
+						    "org.ofono",
+						    modem_path,
+						    NULL,
+						    &error);
+
+	if (priv->modem == NULL) {
+		g_warning ("Unable to get Modem Proxy: %s", error->message);
+		g_error_free (error);
+		exit (0);
+	}
+
+	modem_call_get_properties (priv->modem, NULL, modem_get_properties_cb, ofono_wizard);
+}
+
+static void
+connection_context_set_active (GObject      *source_object,
+			       GAsyncResult *res,
+			       gpointer      user_data)
+{
+	GError *error = NULL;
+	gboolean ret;
+
+	OfonoWizard *wizard = user_data;
+	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (wizard);
+
+	ret = connection_context_call_set_property_finish (priv->context, res, &error);
+	if (!ret) {
+		g_warning ("Unable to set Context Property:Active : %s", error->message);
+		g_error_free (error);
+		if (error->code != 36)
+			gtk_main_quit ();
+	}
+
+	if (priv->active == TRUE) {
+		priv->active = FALSE;
+
+		connection_context_call_set_property (priv->context,
+						      "AccessPointName",
+						      g_variant_new_variant (g_variant_new_string (priv->selected_apn)),
+						      NULL,
+						      connection_context_set_apn,
+						      wizard);
+	} else {
+		priv->active = TRUE;
+
+		gtk_main_quit ();
+	}
+}
+
+static void
+connection_context_set_password (GObject      *source_object,
+				 GAsyncResult *res,
+				 gpointer      user_data)
+{
+	GError *error = NULL;
+	gboolean ret;
+
+	OfonoWizard *wizard = user_data;
+	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (wizard);
+
+	ret = connection_context_call_set_property_finish (priv->context, res, &error);
+	if (!ret) {
+		g_warning ("Unable to set Context Property:Password : %s", error->message);
+		g_error_free (error);
+		if (error->code != 36)
+			gtk_main_quit ();
+	}
+
+	connection_context_call_set_property (priv->context,
+					      "Active",
+					      g_variant_new_variant (g_variant_new_boolean (TRUE)),
+					      NULL,
+					      connection_context_set_active,
+					      wizard);
+}
+
+static void
+connection_context_set_username (GObject      *source_object,
+				 GAsyncResult *res,
+				 gpointer      user_data)
+{
+	GError *error = NULL;
+	gboolean ret;
+
+	OfonoWizard *wizard = user_data;
+	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (wizard);
+
+	ret = connection_context_call_set_property_finish (priv->context, res, &error);
+	if (!ret) {
+		g_warning ("Unable to set Context Property:Username : %s", error->message);
+		g_error_free (error);
+		if (error->code != 36)
+			gtk_main_quit ();
+	}
+
+	if (priv->selected_password) {
+		connection_context_call_set_property (priv->context,
+						      "Password",
+						      g_variant_new_variant (g_variant_new_string (priv->selected_password)),
+						      NULL,
+						      connection_context_set_password,
+						      wizard);
+	} else {
+		connection_context_call_set_property (priv->context,
+						      "Active",
+						      g_variant_new_variant (g_variant_new_boolean (TRUE)),
+						      NULL,
+						      connection_context_set_active,
+						      wizard);
+	}
+}
+
+static void
+connection_context_set_apn (GObject      *source_object,
+			    GAsyncResult *res,
+			    gpointer      user_data)
+{
+	GError *error = NULL;
+	gboolean ret;
+
+	OfonoWizard *wizard = user_data;
+	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (wizard);
+
+	ret = connection_context_call_set_property_finish (priv->context, res, &error);
+	if (!ret) {
+		g_warning ("Unable to set Context Property:APN : %s", error->message);
+		g_error_free (error);
+		if (error->code != 36)
+			gtk_main_quit ();
+	}
+
+	if (priv->selected_username) {
+		connection_context_call_set_property (priv->context,
+						      "Username",
+						      g_variant_new_variant (g_variant_new_string (priv->selected_username)),
+						      NULL,
+						      connection_context_set_username,
+						      wizard);
+	} else {
+		connection_context_call_set_property (priv->context,
+						      "Active",
+						      g_variant_new_variant (g_variant_new_boolean (TRUE)),
+						      NULL,
+						      connection_context_set_active,
+						      wizard);
+	}
 }
 
 static void
@@ -1373,77 +1556,23 @@ ofono_wizard_setup_context (OfonoWizard *ofono_wizard, gchar *apn, gchar *userna
 	if (priv->context == NULL) {
 		g_warning ("Unable to get Modem context: %s", error->message);
 		g_error_free (error);
-		exit (0);
+		gtk_main_quit ();
 	}
 
-	/* First Deactivate the context. You cannot set the settings if context is active */
-	ret = connection_context_call_set_property_sync (priv->context,
-							 "Active",
-							 g_variant_new_variant (g_variant_new_boolean (FALSE)),
-							 NULL,
-							 &error);
-
-	if (!ret && error->code != 36) {
-		g_warning ("Unable to deactivate context:%s", error->message);
-		g_error_free (error);
-		exit (0);
+	if (priv->active) {
+		connection_context_call_set_property (priv->context,
+						      "Active",
+						      g_variant_new_variant (g_variant_new_boolean (FALSE)),
+						      NULL,
+						      connection_context_set_active,
+						      ofono_wizard);
+	} else {
+		connection_context_call_set_property (priv->context,
+						      "AccessPointName",
+						      g_variant_new_variant (g_variant_new_string (priv->selected_apn)),
+						      NULL,
+						      connection_context_set_apn,
+						      ofono_wizard);
 	}
 
-	/*Apply the settings*/
-
-	/* AccessPointName */
-	ret = connection_context_call_set_property_sync (priv->context,
-							 "AccessPointName",
-							 g_variant_new_variant (g_variant_new_string (priv->selected_apn)),
-							 NULL,
-							 &error);
-
-	if (!ret && error->code != 36) {
-		g_warning ("Unable to set the APN:%s", error->message);
-		g_error_free (error);
-		exit (0);
-	}
-
-	/* Username */
-	if (priv->selected_username) {
-		ret = connection_context_call_set_property_sync (priv->context,
-								 "Username",
-								 g_variant_new_variant (g_variant_new_string (priv->selected_username)),
-								 NULL,
-								 &error);
-
-		if (!ret && error->code != 36) {
-			g_warning ("Unable to set the Username:%s", error->message);
-			g_error_free (error);
-			exit (0);
-		}
-	}
-
-	/* Password */
-	if (priv->selected_password) {
-		ret = connection_context_call_set_property_sync (priv->context,
-								 "Password",
-								 g_variant_new_variant (g_variant_new_string (priv->selected_password)),
-								 NULL,
-								 &error);
-
-		if (!ret && error->code != 36) {
-			g_warning ("Unable to set the Username:%s", error->message);
-			g_error_free (error);
-			exit (0);
-		}
-	}
-
-	/* Activate the context for the settings to take effect */
-	ret = connection_context_call_set_property_sync (priv->context,
-							 "Active",
-							 g_variant_new_variant (g_variant_new_boolean (TRUE)),
-							 NULL,
-							 &error);
-
-	if (!ret && error->code != 36) {
-		g_warning ("Unable to activate context:%s", error->message);
-		g_error_free (error);
-		exit (0);
-	}
 }
