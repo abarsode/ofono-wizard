@@ -150,6 +150,7 @@ static void
 confirm_setup (OfonoWizardPrivate *priv)
 {
 	GtkWidget *vbox, *label, *alignment, *pbox;
+	GtkWidget *device_label;
 
         vbox = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
 
@@ -161,15 +162,15 @@ confirm_setup (OfonoWizardPrivate *priv)
 	gtk_box_pack_start (GTK_BOX (vbox), label, FALSE, FALSE, 6);
 
 	/* Device */
-	/* priv->confirm_device_label = gtk_label_new (_("Your Device:")); */
-	/* gtk_misc_set_alignment (GTK_MISC (priv->confirm_device_label), 0, 0.5); */
-	/* gtk_box_pack_start (GTK_BOX (vbox), priv->confirm_device_label, FALSE, FALSE, 0); */
+	label = gtk_label_new (_("Your Device:"));
+	gtk_misc_set_alignment (GTK_MISC (label), 0, 0.5);
+	gtk_box_pack_start (GTK_BOX (vbox), label, FALSE, FALSE, 0);
 
-	/* alignment = gtk_alignment_new (0, 0.5, 0, 0); */
-	/* gtk_alignment_set_padding (GTK_ALIGNMENT (alignment), 0, 12, 25, 0); */
-	/* priv->confirm_device = gtk_label_new (NULL); */
-	/* gtk_container_add (GTK_CONTAINER (alignment), priv->confirm_device); */
-	/* gtk_box_pack_start (GTK_BOX (vbox), alignment, FALSE, FALSE, 0); */
+	alignment = gtk_alignment_new (0, 0.5, 0, 0);
+	gtk_alignment_set_padding (GTK_ALIGNMENT (alignment), 0, 12, 25, 0);
+	device_label = gtk_label_new (priv->name);
+	gtk_container_add (GTK_CONTAINER (alignment), device_label);
+	gtk_box_pack_start (GTK_BOX (vbox), alignment, FALSE, FALSE, 0);
 
 	/* Provider */
 	label = gtk_label_new (_("Your Provider:"));
