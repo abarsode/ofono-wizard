@@ -1434,6 +1434,27 @@ connection_context_set_active (GObject      *source_object,
 }
 
 static void
+connection_context_set_plan (GObject      *source_object,
+			     GAsyncResult *res,
+			     gpointer      user_data)
+{
+	GError *error = NULL;
+	gboolean ret;
+
+	OfonoWizard *wizard = user_data;
+	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (wizard);
+
+	ret = connection_context_call_set_property_finish (priv->context, res, &error);
+	if (!ret) {
+		if (error->code != 36)
+			g_warning ("Unable to set Context Property:Plan : %s", error->message);
+		g_error_free (error);
+	}
+
+	gtk_main_quit ();
+}
+
+static void
 connection_context_set_password (GObject      *source_object,
 				 GAsyncResult *res,
 				 gpointer      user_data)
@@ -1452,7 +1473,12 @@ connection_context_set_password (GObject      *source_object,
 			gtk_main_quit ();
 	}
 
-	gtk_main_quit ();
+	connection_context_call_set_property (priv->context,
+					      "Name",
+					      g_variant_new_variant (g_variant_new_string (priv->selected_plan)),
+					      NULL,
+					      connection_context_set_plan,
+					      wizard);
 }
 
 static void
