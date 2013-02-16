@@ -206,7 +206,7 @@ confirm_setup (OfonoWizardPrivate *priv)
 
 	if (TRUE) {
 		alignment = gtk_alignment_new (0, 0.5, 1, 0);
-		label = gtk_label_new (_("A connection will now be made to your mobile broadband provider using the settings you selected.  If the connection fails or you cannot access network resources, double-check your settings.  To modify your mobile broadband connection settings, choose \"Network Connections\" from the System >> Preferences menu."));
+		label = gtk_label_new (_("You have to enable this connection to connect to your mobile broadband provider using the settings you selected.  If the connection fails or you cannot access network resources, double-check your settings.  To modify your mobile broadband connection settings, choose \"APN settings \" from the System >> Network >> Cellular menu."));
 		gtk_widget_set_size_request (label, 500, -1);
 		gtk_misc_set_alignment (GTK_MISC (label), 0, 0.5);
 		gtk_misc_set_padding (GTK_MISC (label), 0, 6);
@@ -507,17 +507,19 @@ plan_setup (OfonoWizardPrivate *priv)
 	gtk_container_add (GTK_CONTAINER (alignment), priv->plan_unlisted_entry);
 	gtk_box_pack_start (GTK_BOX (vbox), alignment, FALSE, FALSE, 0);
 
-        hbox = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+	if (priv->active) {
+		hbox = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
 
-	image = gtk_image_new_from_stock (GTK_STOCK_DIALOG_WARNING, GTK_ICON_SIZE_DIALOG);
-	gtk_misc_set_alignment (GTK_MISC (image), 0.5, 0.0);
-	gtk_box_pack_start (GTK_BOX (hbox), image, FALSE, FALSE, 0);
+		image = gtk_image_new_from_stock (GTK_STOCK_DIALOG_WARNING, GTK_ICON_SIZE_DIALOG);
+		gtk_misc_set_alignment (GTK_MISC (image), 0.5, 0.0);
+		gtk_box_pack_start (GTK_BOX (hbox), image, FALSE, FALSE, 0);
 
-	label = gtk_label_new (_("Warning: Selecting an incorrect plan may result in billing issues for your broadband account or may prevent connectivity.\n\nIf you are unsure of your plan please ask your provider for your plan's APN."));
-	gtk_widget_set_size_request (label, 500, -1);
-	gtk_label_set_line_wrap (GTK_LABEL (label), TRUE);
-	gtk_box_pack_start (GTK_BOX (hbox), label, FALSE, TRUE, 0);
-	gtk_box_pack_start (GTK_BOX (vbox), hbox, FALSE, FALSE, 0);
+		label = gtk_label_new (_("Warning: You seem to have a active data connection.\nApplying these new settings will disconnect you from the active data connection.\n\n"));
+		gtk_widget_set_size_request (label, 500, -1);
+		gtk_label_set_line_wrap (GTK_LABEL (label), TRUE);
+		gtk_box_pack_start (GTK_BOX (hbox), label, FALSE, TRUE, 0);
+		gtk_box_pack_start (GTK_BOX (vbox), hbox, FALSE, FALSE, 0);
+	}
 
 	priv->plan_idx = gtk_assistant_append_page (GTK_ASSISTANT (priv->assistant), vbox);
 	gtk_assistant_set_page_title (GTK_ASSISTANT (priv->assistant), vbox, _("Choose your Billing Plan"));
@@ -1423,20 +1425,12 @@ connection_context_set_active (GObject      *source_object,
 			gtk_main_quit ();
 	}
 
-	if (priv->active == TRUE) {
-		priv->active = FALSE;
-
-		connection_context_call_set_property (priv->context,
-						      "AccessPointName",
-						      g_variant_new_variant (g_variant_new_string (priv->selected_apn)),
-						      NULL,
-						      connection_context_set_apn,
-						      wizard);
-	} else {
-		priv->active = TRUE;
-
-		gtk_main_quit ();
-	}
+	connection_context_call_set_property (priv->context,
+					      "AccessPointName",
+					      g_variant_new_variant (g_variant_new_string (priv->selected_apn)),
+					      NULL,
+					      connection_context_set_apn,
+					      wizard);
 }
 
 static void
@@ -1458,12 +1452,7 @@ connection_context_set_password (GObject      *source_object,
 			gtk_main_quit ();
 	}
 
-	connection_context_call_set_property (priv->context,
-					      "Active",
-					      g_variant_new_variant (g_variant_new_boolean (TRUE)),
-					      NULL,
-					      connection_context_set_active,
-					      wizard);
+	gtk_main_quit ();
 }
 
 static void
@@ -1494,10 +1483,10 @@ connection_context_set_username (GObject      *source_object,
 						      wizard);
 	} else {
 		connection_context_call_set_property (priv->context,
-						      "Active",
-						      g_variant_new_variant (g_variant_new_boolean (TRUE)),
+						      "Password",
+						      g_variant_new_variant (g_variant_new_string ("")),
 						      NULL,
-						      connection_context_set_active,
+						      connection_context_set_password,
 						      wizard);
 	}
 }
@@ -1530,10 +1519,10 @@ connection_context_set_apn (GObject      *source_object,
 						      wizard);
 	} else {
 		connection_context_call_set_property (priv->context,
-						      "Active",
-						      g_variant_new_variant (g_variant_new_boolean (TRUE)),
+						      "Username",
+						      g_variant_new_variant (g_variant_new_string ("")),
 						      NULL,
-						      connection_context_set_active,
+						      connection_context_set_username,
 						      wizard);
 	}
 }
