@@ -43,5 +43,6 @@ PlanInfo *mobile_provider_get_plan_info (const gchar *country_name,
 					 const gchar *plan_name);
 
 gchar *mobile_provider_get_country_from_code (gchar *code);
+gchar *mobile_provider_get_country_code_from_mcc (gchar *mcc);
 
 #endif /* MOBILE_PROVIDER_H*/

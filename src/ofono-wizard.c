@@ -33,6 +33,7 @@
 #include "ofono-modem.h"
 #include "ofono-connman.h"
 #include "ofono-context.h"
+#include "ofono-sim.h"
 
 #include "ofono-wizard.h"
 #include "mobile-provider.h"
@@ -41,14 +42,16 @@ struct _OfonoWizardPrivate {
 	Manager *manager;
 	Modem	*modem;
 	gchar	*name;
+	gchar	*mcc;
 	gchar	*context_path;
 	gchar	*modem_path;
 	ConnectionManager *ConnectionManager;
 	ConnectionContext *context;
+	SimManager *sim_manager;
 	gboolean active;
 
 	GtkWidget *assistant;
-	const gchar *country_by_locale;
+	const gchar *country_by_mcc;
 	gchar *selected_country;
 	gchar *selected_provider;
 	gchar *selected_plan;
@@ -108,39 +111,11 @@ static void          ofono_wizard_finalize               (GObject		*object);
 G_DEFINE_TYPE (OfonoWizard, ofono_wizard, G_TYPE_OBJECT)
 
 static void
+ofono_wizard_get_sim_manager (OfonoWizard *ofono_wizard);
+static void
 ofono_wizard_setup_context (OfonoWizard *ofono_wizard, gchar *apn, gchar *username, gchar *password);
 static void
 connection_context_set_apn (GObject *source_object, GAsyncResult *res, gpointer user_data);
-
-static char *
-get_country_from_locale (void)
-{
-	char *p, *m, *cc, *lang;
-
-	lang = getenv ("LC_ALL");
-	if (!lang)
-		lang = getenv ("LANG");
-	if (!lang)
-		return NULL;
-
-	p = strchr (lang, '_');
-	if (!p || !strlen (p)) {
-		g_free (p);
-		return NULL;
-	}
-
-	p = cc = g_strdup (++p);
-	m = strchr (cc, '.');
-	if (m)
-		*m = '\0';
-
-	while (*p) {
-		*p = g_ascii_toupper (*p);
-		p++;
-	}
-
-	return cc;
-}
 
 /**********************************************************/
 /* Confirm page */
@@ -257,6 +232,10 @@ confirm_prepare (OfonoWizardPrivate *priv)
 	gtk_label_set_markup (GTK_LABEL (priv->confirm_apn), str->str);
 	g_string_free (str, TRUE);
 }
+
+/**********************************************************/
+/* Intro page */
+/**********************************************************/
 
 static void
 intro_setup (OfonoWizardPrivate *priv)
@@ -923,7 +902,7 @@ add_country (gpointer data, gpointer user_data)
 	 * select it by default.
 	 */
 
-	if (strcmp (priv->country_by_locale, country) != 0)
+	if (g_strcmp0 (priv->country_by_mcc, country) != 0)
 		return;
 
 	country_path = gtk_tree_model_get_path (GTK_TREE_MODEL (priv->country_store), &country_iter);
@@ -1134,14 +1113,17 @@ void
 ofono_wizard_setup_assistant(OfonoWizard *ofono_wizard)
 {
 	OfonoWizardPrivate *priv;
-	gchar *country_code_by_locale;
+	gchar *country_code_by_mcc = NULL;
 
 	priv = OFONO_WIZARD_GET_PRIVATE (ofono_wizard);
 
 	priv->assistant = gtk_assistant_new ();
 
-	country_code_by_locale = get_country_from_locale ();
-	priv->country_by_locale = mobile_provider_get_country_from_code (country_code_by_locale);
+	if (priv->mcc)
+		country_code_by_mcc = mobile_provider_get_country_code_from_mcc (priv->mcc);
+
+	if (country_code_by_mcc)
+		priv->country_by_mcc = mobile_provider_get_country_from_code (country_code_by_mcc);
 
 	gtk_window_set_title (GTK_WINDOW (priv->assistant), _("Mobile Broadband Connection Setup"));
 	gtk_window_set_position (GTK_WINDOW (priv->assistant), GTK_WIN_POS_CENTER_ALWAYS);
@@ -1264,16 +1246,16 @@ connection_manager_get_contexts_cb (GObject      *source_object,
 		g_variant_unref (properties);
 	}
 
-	g_variant_unref (array_value);
-	g_variant_unref (tuple_value);
-	g_variant_unref (properties);
-	g_variant_unref (result);
-
 	if (!found) {
 		g_warning ("Unable to get Internet context");
 		exit (0);
 		/* Create a 'internet' context here? */
 	}
+
+	g_variant_unref (array_value);
+	g_variant_unref (tuple_value);
+	g_variant_unref (properties);
+	g_variant_unref (result);
 
 	ofono_wizard_setup_assistant (wizard);
 }
@@ -1367,8 +1349,17 @@ modem_get_properties_cb (GObject      *source_object,
 
 	/* Find if ConnectionManager interface is available */
 	interface_list = g_strjoinv (" ", interfaces);
-	gchar *s = g_strrstr (interface_list, "org.ofono.ConnectionManager");
+	gchar *s = g_strrstr (interface_list, "org.ofono.SimManager");
 	if (s == NULL) {
+		g_warning ("No SIM interface found");
+		g_free (interface_list);
+		g_strfreev (interfaces);
+		g_variant_unref (result);
+		exit (0);
+	}
+
+	gchar *c = g_strrstr (interface_list, "org.ofono.ConnectionManager");
+	if (c == NULL) {
 		g_warning ("No Contexts interface found");
 		g_free (interface_list);
 		g_strfreev (interfaces);
@@ -1380,7 +1371,10 @@ modem_get_properties_cb (GObject      *source_object,
 	g_strfreev (interfaces);
 	g_variant_unref (result);
 
-	ofono_wizard_get_modem_context (wizard);
+	if (s)
+		ofono_wizard_get_sim_manager (wizard);
+	else
+		ofono_wizard_get_modem_context (wizard);
 }
 
 void
@@ -1590,5 +1584,59 @@ ofono_wizard_setup_context (OfonoWizard *ofono_wizard, gchar *apn, gchar *userna
 						      connection_context_set_apn,
 						      ofono_wizard);
 	}
+}
 
+static void
+sim_manager_get_properties_cb (GObject      *source_object,
+			       GAsyncResult *res,
+			       gpointer      user_data)
+{
+	GError *error = NULL;
+	GVariant *result = NULL;
+	GVariant *value = NULL;
+	gboolean ret;
+	const gchar *mcc;
+
+	OfonoWizard *wizard = user_data;
+	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (wizard);
+
+	ret = sim_manager_call_get_properties_finish (priv->sim_manager, &result, res, &error);
+	if (!ret) {
+		g_warning ("Unable to get SIM properties: %s", error->message);
+		g_error_free (error);
+		goto done;
+	}
+
+	ret = g_variant_lookup (result, "MobileCountryCode", "s", &mcc);
+	if (!ret) {
+		g_warning ("Unable to determine SIM MCC");
+	} else
+		priv->mcc = g_strdup (mcc);
+
+	g_variant_unref (result);
+done:
+		ofono_wizard_get_modem_context (wizard);
+}
+
+static void
+ofono_wizard_get_sim_manager (OfonoWizard *ofono_wizard)
+{
+	GError *error = NULL;
+
+	OfonoWizardPrivate *priv = OFONO_WIZARD_GET_PRIVATE (ofono_wizard);
+
+	priv->sim_manager = sim_manager_proxy_new_for_bus_sync (G_BUS_TYPE_SYSTEM,
+								G_DBUS_PROXY_FLAGS_NONE,
+								"org.ofono",
+								priv->modem_path,
+								NULL,
+								&error);
+
+	if (priv->sim_manager == NULL) {
+		g_warning ("Unable to get SIM Manager: %s", error->message);
+		g_error_free (error);
+		exit (0);
+	}
+
+	sim_manager_call_get_properties (priv->sim_manager, NULL, sim_manager_get_properties_cb ,ofono_wizard);
 }

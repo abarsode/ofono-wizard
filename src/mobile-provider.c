@@ -68,10 +68,13 @@ static char *servicexml_current_plan_name = NULL;
 static char *servicexml_current_username = NULL;
 static char *servicexml_current_password = NULL;
 
-/* Country Code (key) <--> Hash of Providers (value)	: country_info
+/*
+ * MCC		(key) <--> country code (value)		: mcc_info
+ * Country Code (key) <--> Hash of Providers (value)	: country_info
  * Provider Name(key) <--> Hash of Plans (value)	: provider_info
  * Plan Name	(key) <--> Hash of Plan Info (value)	: plan_info
 */
+static GHashTable *mcc_info = NULL;
 static GHashTable *plan_info = NULL;
 static GHashTable *provider_info = NULL;
 static GHashTable *country_info = NULL;
@@ -149,7 +152,29 @@ servicexml_gsm_start (const char *name,
 		      const char **attribute_names,
 		      const char **attribute_values)
 {
-	if (!strcmp (name, "apn")) {
+	if (!strcmp (name, "network-id")) {
+		const char *mcc = NULL;
+		int i;
+
+		for (i = 0; attribute_names && attribute_names[i]; i++) {
+			if (!strcmp (attribute_names[i], "mcc"))
+				mcc = attribute_values[i];
+
+			if (mcc && strlen (mcc)) {
+				if (mcc_info == NULL) {
+					mcc_info = g_hash_table_new_full (g_str_hash, g_str_equal,
+							       (GDestroyNotify) g_free,
+							       (GDestroyNotify) g_free);
+				}
+
+				gchar *code = g_hash_table_lookup (mcc_info, mcc);
+				if (code == NULL)
+					g_hash_table_insert (mcc_info, g_strdup(mcc), g_strdup (servicexml_current_country_code));
+
+				break;
+			}
+		}
+	} else if (!strcmp (name, "apn")) {
 		int i;
 
 		for (i = 0; attribute_names && attribute_names[i]; i++) {
@@ -495,6 +520,7 @@ mobile_provider_exit ()
 {
 	g_hash_table_destroy (country_codes);
 	g_hash_table_destroy (country_info);
+	g_hash_table_destroy (mcc_info);
 }
 
 /************ HELPER FUNCTIONS FOR MOBILE PROVIDER *********/
@@ -597,6 +623,9 @@ gchar *mobile_provider_get_country_from_code (gchar *code)
 	GHashTableIter iter;
 	gpointer key, value;
 
+	if (code == NULL)
+		return NULL;
+
 	g_hash_table_iter_init (&iter, country_codes);
 
 	while (g_hash_table_iter_next (&iter, &key, &value))
@@ -606,6 +635,17 @@ gchar *mobile_provider_get_country_from_code (gchar *code)
 	}
 
 	return NULL;
+}
+
+gchar *mobile_provider_get_country_code_from_mcc (gchar *mcc)
+{
+	gchar *country_code;
+
+	country_code =  g_hash_table_lookup (mcc_info, mcc);
+	if (country_code)
+		return g_ascii_strup (country_code, -1);
+	else
+		return NULL;
 }
 
 /************** TEST THE SERVICEXML TABLES & COUNTRY CODES ****************/
