@@ -359,7 +359,7 @@ plan_update_complete (OfonoWizardPrivate *priv)
 
 		gtk_assistant_set_page_complete (assistant, priv->plan_page, TRUE);
 	} else {
-		priv->selected_apn = (gchar *)gtk_entry_get_text (GTK_ENTRY (priv->plan_unlisted_entry));
+		priv->selected_apn = g_strdup (gtk_entry_get_text (GTK_ENTRY (priv->plan_unlisted_entry)));
 		priv->selected_username = NULL;
 		priv->selected_password = NULL;
 
@@ -766,20 +766,20 @@ providers_setup (OfonoWizardPrivate *priv)
 	gtk_container_add (GTK_CONTAINER (alignment), priv->provider_unlisted_entry);
 	gtk_grid_attach (GTK_GRID (unlisted_table), alignment, 0, 2, 1, 1);
 
-	priv->provider_unlisted_type_combo = gtk_combo_box_text_new ();
+	/* priv->provider_unlisted_type_combo = gtk_combo_box_text_new (); */
 
-	gtk_label_set_mnemonic_widget (GTK_LABEL (label), priv->provider_unlisted_type_combo);
+	/* gtk_label_set_mnemonic_widget (GTK_LABEL (label), priv->provider_unlisted_type_combo); */
 
-	gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (priv->provider_unlisted_type_combo),
-	                           _("My provider uses GSM technology (GPRS, EDGE, UMTS, HSPA)"));
+	/* gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (priv->provider_unlisted_type_combo), */
+	/*                            _("My provider uses GSM technology (GPRS, EDGE, UMTS, HSPA)")); */
 
-	gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (priv->provider_unlisted_type_combo),
-	                           _("My provider uses CDMA technology (1xRTT, EVDO)"));
+	/* gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (priv->provider_unlisted_type_combo), */
+	/*                            _("My provider uses CDMA technology (1xRTT, EVDO)")); */
 
-	gtk_combo_box_set_active (GTK_COMBO_BOX (priv->provider_unlisted_type_combo), 0);
+	/* gtk_combo_box_set_active (GTK_COMBO_BOX (priv->provider_unlisted_type_combo), 0); */
 
-	gtk_grid_attach (GTK_GRID (unlisted_table), priv->provider_unlisted_type_combo,
-			 0, 3, 1, 2);
+	/* gtk_grid_attach (GTK_GRID (unlisted_table), priv->provider_unlisted_type_combo, */
+	/* 		 0, 3, 1, 2); */
 
 	/* Only show the CDMA/GSM combo if we don't know the device type */
 	//if (priv->family != NMA_MOBILE_FAMILY_UNKNOWN)
@@ -1468,12 +1468,21 @@ connection_context_set_password (GObject      *source_object,
 			gtk_main_quit ();
 	}
 
-	connection_context_call_set_property (priv->context,
-					      "Name",
-					      g_variant_new_variant (g_variant_new_string (priv->selected_plan)),
-					      NULL,
-					      connection_context_set_plan,
-					      wizard);
+	if (strcmp (priv->selected_plan, _("My plan is not listed..."))) {
+		connection_context_call_set_property (priv->context,
+						      "Name",
+						      g_variant_new_variant (g_variant_new_string (priv->selected_plan)),
+						      NULL,
+						      connection_context_set_plan,
+						      wizard);
+	} else {
+		connection_context_call_set_property (priv->context,
+						      "Name",
+						      g_variant_new_variant (g_variant_new_string (priv->selected_apn)),
+						      NULL,
+						      connection_context_set_plan,
+						      wizard);
+	}
 }
 
 static void
